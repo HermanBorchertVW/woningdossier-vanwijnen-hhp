@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { storage } from "./storage.js";
 
 /* ---------------------------------------------------------
    Van Wijnen — QR Woningdossier
@@ -354,22 +355,22 @@ function AdminView({ onPreview }) {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const proj = await window.storage.get("project-info", true).catch(() => null);
+      const proj = await storage.get("project-info").catch(() => null);
       if (proj?.value) setProject({ ...PROJECT_DEFAULT, ...JSON.parse(proj.value) });
     } catch (e) {}
     try {
-      const shared = await window.storage.get("shared-docs", true).catch(() => null);
+      const shared = await storage.get("shared-docs").catch(() => null);
       if (shared?.value) setSharedDocs(JSON.parse(shared.value));
     } catch (e) {}
     try {
-      const c = await window.storage.get("contact-info", true).catch(() => null);
+      const c = await storage.get("contact-info").catch(() => null);
       if (c?.value) {
         const parsed = JSON.parse(c.value);
         setContacts(Array.isArray(parsed) ? parsed : parsed?.contactName ? [parsed] : []);
       }
     } catch (e) {}
     try {
-      const list = await window.storage.list("apt:", true);
+      const list = await storage.list("apt:");
       const keys = (list?.keys || []).map((k) => k.replace(/^apt:/, ""));
       keys.sort((a, b) =>
         a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
@@ -388,7 +389,7 @@ function AdminView({ onPreview }) {
   const saveProject = async () => {
     setStatus((s) => ({ ...s, project: t.saving }));
     try {
-      await window.storage.set("project-info", JSON.stringify(project), true);
+      await storage.set("project-info", JSON.stringify(project));
       setStatus((s) => ({ ...s, project: t.saved }));
     } catch (e) {
       setStatus((s) => ({ ...s, project: "" }));
@@ -398,7 +399,7 @@ function AdminView({ onPreview }) {
   const saveSharedDocs = async () => {
     setStatus((s) => ({ ...s, shared: t.saving }));
     try {
-      await window.storage.set("shared-docs", JSON.stringify(sharedDocs), true);
+      await storage.set("shared-docs", JSON.stringify(sharedDocs));
       setStatus((s) => ({ ...s, shared: t.saved }));
     } catch (e) {
       setStatus((s) => ({ ...s, shared: "" }));
@@ -408,7 +409,7 @@ function AdminView({ onPreview }) {
   const saveContacts = async () => {
     setStatus((s) => ({ ...s, contact: t.saving }));
     try {
-      await window.storage.set("contact-info", JSON.stringify(contacts), true);
+      await storage.set("contact-info", JSON.stringify(contacts));
       setStatus((s) => ({ ...s, contact: t.saved }));
     } catch (e) {
       setStatus((s) => ({ ...s, contact: "" }));
@@ -434,7 +435,7 @@ function AdminView({ onPreview }) {
     setSelectedApt(apt);
     setStatus((s) => ({ ...s, apt: "" }));
     try {
-      const res = await window.storage.get(`apt:${apt}`, true).catch(() => null);
+      const res = await storage.get(`apt:${apt}`).catch(() => null);
       setAptDocs(
         res?.value
           ? { ...Object.fromEntries(UNIQUE_KEYS.map((k) => [k, ""])), ...JSON.parse(res.value) }
@@ -450,10 +451,9 @@ function AdminView({ onPreview }) {
     if (!num) return;
     if (!apartments.includes(num)) {
       try {
-        await window.storage.set(
+        await storage.set(
           `apt:${num}`,
-          JSON.stringify(Object.fromEntries(UNIQUE_KEYS.map((k) => [k, ""]))),
-          true
+          JSON.stringify(Object.fromEntries(UNIQUE_KEYS.map((k) => [k, ""])))
         );
         const next = [...apartments, num].sort((a, b) =>
           a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
@@ -469,7 +469,7 @@ function AdminView({ onPreview }) {
     if (!selectedApt) return;
     setStatus((s) => ({ ...s, apt: t.saving }));
     try {
-      await window.storage.set(`apt:${selectedApt}`, JSON.stringify(aptDocs), true);
+      await storage.set(`apt:${selectedApt}`, JSON.stringify(aptDocs));
       setStatus((s) => ({ ...s, apt: t.saved }));
     } catch (e) {
       setStatus((s) => ({ ...s, apt: "" }));
@@ -479,7 +479,7 @@ function AdminView({ onPreview }) {
   const deleteApartment = async (apt) => {
     if (!window.confirm(t.confirmDelete)) return;
     try {
-      await window.storage.delete(`apt:${apt}`, true).catch(() => {});
+      await storage.delete(`apt:${apt}`).catch(() => {});
       const next = apartments.filter((a) => a !== apt);
       setApartments(next);
       if (selectedApt === apt) {
@@ -868,22 +868,22 @@ function ResidentView({ apt }) {
     (async () => {
       setLoading(true);
       try {
-        const proj = await window.storage.get("project-info", true).catch(() => null);
+        const proj = await storage.get("project-info").catch(() => null);
         if (!cancelled && proj?.value) setProject({ ...PROJECT_DEFAULT, ...JSON.parse(proj.value) });
       } catch (e) {}
       try {
-        const shared = await window.storage.get("shared-docs", true).catch(() => null);
+        const shared = await storage.get("shared-docs").catch(() => null);
         if (!cancelled && shared?.value) setSharedDocs(JSON.parse(shared.value));
       } catch (e) {}
       try {
-        const c = await window.storage.get("contact-info", true).catch(() => null);
+        const c = await storage.get("contact-info").catch(() => null);
         if (!cancelled && c?.value) {
           const parsed = JSON.parse(c.value);
           setContacts(Array.isArray(parsed) ? parsed : parsed?.contactName ? [parsed] : []);
         }
       } catch (e) {}
       try {
-        const res = await window.storage.get(`apt:${apt}`, true).catch(() => null);
+        const res = await storage.get(`apt:${apt}`).catch(() => null);
         if (!cancelled) {
           if (res?.value) {
             setAptDocs(JSON.parse(res.value));
