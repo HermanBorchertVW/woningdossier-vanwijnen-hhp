@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { storage } from "./storage.js";
 
 /* ---------------------------------------------------------
    Van Wijnen — QR Woningdossier
@@ -98,6 +97,9 @@ const T = {
     contactRoleLabel: "Functie",
     contactCompanyLabel: "Bedrijf",
     contactPhoneLabel: "Telefoonnummer",
+    addContact: "Contactpersoon toevoegen",
+    deleteContact: "Verwijderen",
+    noContacts: "Nog geen contactpersoon toegevoegd.",
     apartmentsSectionTitle: "Appartementen",
     newApartment: "Nieuw appartementnummer",
     addApartment: "Appartement toevoegen",
@@ -165,6 +167,9 @@ const T = {
     contactRoleLabel: "Role",
     contactCompanyLabel: "Company",
     contactPhoneLabel: "Phone number",
+    addContact: "Add contact person",
+    deleteContact: "Remove",
+    noContacts: "No contact person added yet.",
     apartmentsSectionTitle: "Apartments",
     newApartment: "New apartment number",
     addApartment: "Add apartment",
@@ -232,6 +237,9 @@ const T = {
     contactRoleLabel: "Funkcja",
     contactCompanyLabel: "Firma",
     contactPhoneLabel: "Numer telefonu",
+    addContact: "Dodaj osobę kontaktową",
+    deleteContact: "Usuń",
+    noContacts: "Nie dodano jeszcze żadnej osoby kontaktowej.",
     apartmentsSectionTitle: "Mieszkania",
     newApartment: "Nowy numer mieszkania",
     addApartment: "Dodaj mieszkanie",
@@ -311,16 +319,10 @@ function qrImageUrl(link) {
 /* ---------------------------- Shell ---------------------------- */
 
 export default function WoningdossierApp() {
-  const [residentApt, setResidentApt] = useHashRoute();
+  const [residentApt] = useHashRoute();
 
   return residentApt ? (
-    <ResidentView
-      apt={residentApt}
-      onBack={() => {
-        window.location.hash = "";
-        setResidentApt(null);
-      }}
-    />
+    <ResidentView apt={residentApt} />
   ) : (
     <AdminView
       onPreview={(apt) => {
@@ -339,9 +341,7 @@ function AdminView({ onPreview }) {
   const [sharedDocs, setSharedDocs] = useState(
     Object.fromEntries(SHARED_KEYS.map((k) => [k, ""]))
   );
-  const [contact, setContact] = useState(
-    Object.fromEntries(CONTACT_KEYS.map((k) => [k, ""]))
-  );
+  const [contacts, setContacts] = useState([]);
   const [apartments, setApartments] = useState([]);
   const [selectedApt, setSelectedApt] = useState(null);
   const [aptDocs, setAptDocs] = useState(
@@ -354,19 +354,22 @@ function AdminView({ onPreview }) {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const proj = await storage.get("project-info").catch(() => null);
+      const proj = await window.storage.get("project-info", true).catch(() => null);
       if (proj?.value) setProject({ ...PROJECT_DEFAULT, ...JSON.parse(proj.value) });
     } catch (e) {}
     try {
-      const shared = await storage.get("shared-docs").catch(() => null);
+      const shared = await window.storage.get("shared-docs", true).catch(() => null);
       if (shared?.value) setSharedDocs(JSON.parse(shared.value));
     } catch (e) {}
     try {
-      const c = await storage.get("contact-info").catch(() => null);
-      if (c?.value) setContact(JSON.parse(c.value));
+      const c = await window.storage.get("contact-info", true).catch(() => null);
+      if (c?.value) {
+        const parsed = JSON.parse(c.value);
+        setContacts(Array.isArray(parsed) ? parsed : parsed?.contactName ? [parsed] : []);
+      }
     } catch (e) {}
     try {
-      const list = await storage.list("apt:");
+      const list = await window.storage.list("apt:", true);
       const keys = (list?.keys || []).map((k) => k.replace(/^apt:/, ""));
       keys.sort((a, b) =>
         a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
@@ -385,7 +388,7 @@ function AdminView({ onPreview }) {
   const saveProject = async () => {
     setStatus((s) => ({ ...s, project: t.saving }));
     try {
-      await storage.set("project-info", JSON.stringify(project));
+      await window.storage.set("project-info", JSON.stringify(project), true);
       setStatus((s) => ({ ...s, project: t.saved }));
     } catch (e) {
       setStatus((s) => ({ ...s, project: "" }));
@@ -395,28 +398,43 @@ function AdminView({ onPreview }) {
   const saveSharedDocs = async () => {
     setStatus((s) => ({ ...s, shared: t.saving }));
     try {
-      await storage.set("shared-docs", JSON.stringify(sharedDocs));
+      await window.storage.set("shared-docs", JSON.stringify(sharedDocs), true);
       setStatus((s) => ({ ...s, shared: t.saved }));
     } catch (e) {
       setStatus((s) => ({ ...s, shared: "" }));
     }
   };
 
-  const saveContact = async () => {
+  const saveContacts = async () => {
     setStatus((s) => ({ ...s, contact: t.saving }));
     try {
-      await storage.set("contact-info", JSON.stringify(contact));
+      await window.storage.set("contact-info", JSON.stringify(contacts), true);
       setStatus((s) => ({ ...s, contact: t.saved }));
     } catch (e) {
       setStatus((s) => ({ ...s, contact: "" }));
     }
   };
 
+  const addContact = () => {
+    setContacts((prev) => [
+      ...prev,
+      { id: `c${Date.now()}`, contactName: "", contactRole: "", contactCompany: "", contactPhone: "" },
+    ]);
+  };
+
+  const updateContact = (id, field, value) => {
+    setContacts((prev) => prev.map((c) => (c.id === id ? { ...c, [field]: value } : c)));
+  };
+
+  const removeContact = (id) => {
+    setContacts((prev) => prev.filter((c) => c.id !== id));
+  };
+
   const selectApartment = async (apt) => {
     setSelectedApt(apt);
     setStatus((s) => ({ ...s, apt: "" }));
     try {
-      const res = await storage.get(`apt:${apt}`).catch(() => null);
+      const res = await window.storage.get(`apt:${apt}`, true).catch(() => null);
       setAptDocs(
         res?.value
           ? { ...Object.fromEntries(UNIQUE_KEYS.map((k) => [k, ""])), ...JSON.parse(res.value) }
@@ -432,9 +450,10 @@ function AdminView({ onPreview }) {
     if (!num) return;
     if (!apartments.includes(num)) {
       try {
-        await storage.set(
+        await window.storage.set(
           `apt:${num}`,
-          JSON.stringify(Object.fromEntries(UNIQUE_KEYS.map((k) => [k, ""])))
+          JSON.stringify(Object.fromEntries(UNIQUE_KEYS.map((k) => [k, ""]))),
+          true
         );
         const next = [...apartments, num].sort((a, b) =>
           a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
@@ -450,7 +469,7 @@ function AdminView({ onPreview }) {
     if (!selectedApt) return;
     setStatus((s) => ({ ...s, apt: t.saving }));
     try {
-      await storage.set(`apt:${selectedApt}`, JSON.stringify(aptDocs));
+      await window.storage.set(`apt:${selectedApt}`, JSON.stringify(aptDocs), true);
       setStatus((s) => ({ ...s, apt: t.saved }));
     } catch (e) {
       setStatus((s) => ({ ...s, apt: "" }));
@@ -460,7 +479,7 @@ function AdminView({ onPreview }) {
   const deleteApartment = async (apt) => {
     if (!window.confirm(t.confirmDelete)) return;
     try {
-      await storage.delete(`apt:${apt}`).catch(() => {});
+      await window.storage.delete(`apt:${apt}`, true).catch(() => {});
       const next = apartments.filter((a) => a !== apt);
       setApartments(next);
       if (selectedApt === apt) {
@@ -564,12 +583,33 @@ function AdminView({ onPreview }) {
             </SectionCard>
 
             <SectionCard title={t.contactSectionTitle} body={t.contactSectionBody}>
-              <LinkRow label={t.contactNameLabel} value={contact.contactName || ""} placeholder="bijv. Herman" onChange={(v) => setContact({ ...contact, contactName: v })} />
-              <LinkRow label={t.contactRoleLabel} value={contact.contactRole || ""} placeholder="bijv. Assistent-uitvoerder" onChange={(v) => setContact({ ...contact, contactRole: v })} />
-              <LinkRow label={t.contactCompanyLabel} value={contact.contactCompany || ""} placeholder="bijv. Van Wijnen" onChange={(v) => setContact({ ...contact, contactCompany: v })} />
-              <LinkRow label={t.contactPhoneLabel} value={contact.contactPhone || ""} placeholder="bijv. 06-12345678" onChange={(v) => setContact({ ...contact, contactPhone: v })} />
-              <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 10 }}>
-                <SaveButton onClick={saveContact} label={t.save} />
+              {contacts.length === 0 && (
+                <p style={{ color: BRAND.mute, fontSize: 14, marginBottom: 14 }}>{t.noContacts}</p>
+              )}
+              {contacts.map((c, i) => (
+                <div
+                  key={c.id}
+                  style={{
+                    borderBottom: `1px solid ${BRAND.line}`,
+                    paddingBottom: 14,
+                    marginBottom: 14,
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: BRAND.mute }}>
+                      {t.contactSectionTitle} {i + 1}
+                    </span>
+                    <button onClick={() => removeContact(c.id)} style={dangerLinkStyle}>{t.deleteContact}</button>
+                  </div>
+                  <LinkRow label={t.contactNameLabel} value={c.contactName || ""} placeholder="bijv. Herman" onChange={(v) => updateContact(c.id, "contactName", v)} />
+                  <LinkRow label={t.contactRoleLabel} value={c.contactRole || ""} placeholder="bijv. Assistent-uitvoerder" onChange={(v) => updateContact(c.id, "contactRole", v)} />
+                  <LinkRow label={t.contactCompanyLabel} value={c.contactCompany || ""} placeholder="bijv. Van Wijnen" onChange={(v) => updateContact(c.id, "contactCompany", v)} />
+                  <LinkRow label={t.contactPhoneLabel} value={c.contactPhone || ""} placeholder="bijv. 06-12345678" onChange={(v) => updateContact(c.id, "contactPhone", v)} />
+                </div>
+              ))}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <button onClick={addContact} style={secondaryBtnStyle}>{t.addContact}</button>
+                <SaveButton onClick={saveContacts} label={t.save} />
                 {status.contact && <span style={{ fontSize: 13, color: BRAND.mute }}>{status.contact}</span>}
               </div>
             </SectionCard>
@@ -813,7 +853,7 @@ function Icon({ type, color }) {
 
 /* -------------------------- Resident -------------------------- */
 
-function ResidentView({ apt, onBack }) {
+function ResidentView({ apt }) {
   const [lang, setLang] = useState("nl");
   const t = T[lang];
   const [loading, setLoading] = useState(true);
@@ -821,26 +861,29 @@ function ResidentView({ apt, onBack }) {
   const [project, setProject] = useState(PROJECT_DEFAULT);
   const [sharedDocs, setSharedDocs] = useState({});
   const [aptDocs, setAptDocs] = useState({});
-  const [contact, setContact] = useState({});
+  const [contacts, setContacts] = useState([]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
       try {
-        const proj = await storage.get("project-info").catch(() => null);
+        const proj = await window.storage.get("project-info", true).catch(() => null);
         if (!cancelled && proj?.value) setProject({ ...PROJECT_DEFAULT, ...JSON.parse(proj.value) });
       } catch (e) {}
       try {
-        const shared = await storage.get("shared-docs").catch(() => null);
+        const shared = await window.storage.get("shared-docs", true).catch(() => null);
         if (!cancelled && shared?.value) setSharedDocs(JSON.parse(shared.value));
       } catch (e) {}
       try {
-        const c = await storage.get("contact-info").catch(() => null);
-        if (!cancelled && c?.value) setContact(JSON.parse(c.value));
+        const c = await window.storage.get("contact-info", true).catch(() => null);
+        if (!cancelled && c?.value) {
+          const parsed = JSON.parse(c.value);
+          setContacts(Array.isArray(parsed) ? parsed : parsed?.contactName ? [parsed] : []);
+        }
       } catch (e) {}
       try {
-        const res = await storage.get(`apt:${apt}`).catch(() => null);
+        const res = await window.storage.get(`apt:${apt}`, true).catch(() => null);
         if (!cancelled) {
           if (res?.value) {
             setAptDocs(JSON.parse(res.value));
@@ -860,7 +903,7 @@ function ResidentView({ apt, onBack }) {
   }, [apt]);
 
   const allDocs = { ...sharedDocs, ...aptDocs };
-  const hasContact = contact.contactName || contact.contactPhone;
+  const visibleContacts = contacts.filter((c) => c.contactName || c.contactPhone);
 
   const docTitle = (d) => {
     const base = t.docs[d.key];
@@ -993,7 +1036,7 @@ function ResidentView({ apt, onBack }) {
               );
             })}
 
-            {hasContact && (
+            {visibleContacts.length > 0 && (
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                   <span style={{ width: 18, height: 3, background: CATEGORY_META.contact.bar, display: "inline-block" }} />
@@ -1001,57 +1044,55 @@ function ResidentView({ apt, onBack }) {
                     {t.categories.contact.toUpperCase()}
                   </span>
                 </div>
-                <a
-                  href={contact.contactPhone ? `tel:${contact.contactPhone.replace(/[^+\d]/g, "")}` : undefined}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 14,
-                    background: "#fff",
-                    borderRadius: 14,
-                    boxShadow: "0 1px 3px rgba(27,27,24,0.08), 0 1px 2px rgba(27,27,24,0.04)",
-                    padding: "14px 16px",
-                    textDecoration: "none",
-                    color: "inherit",
-                  }}
-                >
-                  <span
+                {visibleContacts.map((c, i) => (
+                  <a
+                    key={c.id || i}
+                    href={c.contactPhone ? `tel:${c.contactPhone.replace(/[^+\d]/g, "")}` : undefined}
                     style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: "50%",
-                      background: CATEGORY_META.contact.iconBg,
                       display: "flex",
                       alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
+                      gap: 14,
+                      background: "#fff",
+                      borderRadius: 14,
+                      boxShadow: "0 1px 3px rgba(27,27,24,0.08), 0 1px 2px rgba(27,27,24,0.04)",
+                      padding: "14px 16px",
+                      marginBottom: 10,
+                      textDecoration: "none",
+                      color: "inherit",
                     }}
                   >
-                    <Icon type="person" color={CATEGORY_META.contact.iconColor} />
-                  </span>
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14.5, fontWeight: 700, color: BRAND.ink }}>{contact.contactName}</div>
-                    <div style={{ fontSize: 12.5, color: BRAND.mute, marginTop: 2 }}>
-                      {[contact.contactRole, contact.contactCompany].filter(Boolean).join(" · ")}
-                    </div>
-                  </span>
-                  {contact.contactPhone && (
-                    <span style={{ color: BRAND.red, fontWeight: 800, fontSize: 14, flexShrink: 0 }}>
-                      {contact.contactPhone}
+                    <span
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: "50%",
+                        background: CATEGORY_META.contact.iconBg,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Icon type="person" color={CATEGORY_META.contact.iconColor} />
                     </span>
-                  )}
-                </a>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14.5, fontWeight: 700, color: BRAND.ink }}>{c.contactName}</div>
+                      <div style={{ fontSize: 12.5, color: BRAND.mute, marginTop: 2 }}>
+                        {[c.contactRole, c.contactCompany].filter(Boolean).join(" · ")}
+                      </div>
+                    </span>
+                    {c.contactPhone && (
+                      <span style={{ color: BRAND.red, fontWeight: 800, fontSize: 14, flexShrink: 0 }}>
+                        {c.contactPhone}
+                      </span>
+                    )}
+                  </a>
+                ))}
               </div>
             )}
           </div>
         )}
 
-        <button
-          onClick={onBack}
-          style={{ marginTop: 28, background: "none", border: "none", color: BRAND.mute, fontSize: 12.5, textDecoration: "underline", cursor: "pointer", padding: 0 }}
-        >
-          {t.backToAdmin}
-        </button>
       </div>
     </div>
   );
